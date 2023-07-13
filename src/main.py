@@ -1,14 +1,26 @@
 from fastapi import FastAPI
 from src.models.task import Task
-import random
+from contextlib import asynccontextmanager
 from typing import Annotated
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import Field
 from fastapi import Body
+from src.services.task_service import TaskService, get_task_service
+
+task_service: TaskService | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global task_service 
+    task_service = get_task_service()
+    yield
+    del task_service
+
 
 app = FastAPI(
-    title='TasksAPI',
-    description='An API to perform database operations related to tasks'
+    title='TasksPrioritizer',
+    description='An API to prioritize tasks',
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -20,30 +32,17 @@ app.add_middleware(
 )
 
 
-CLASSIFICATION = [
-    'lowest',
-    'low',
-    'medium',
-    'high',
-    'highest'
-]
-
-fake_db: dict[str, Task] = dict()
-
 @app.get('/tasks')
 def get_all_tasks() -> list[Task]:
-    return list(fake_db.values())
+    return task_service.get_all_tasks()
 
 
 @app.post('/tasks')
 def create_task(task: Task):
-    task.priority = random.choice(CLASSIFICATION)
-    fake_db[task.description] = task
+    task_service.create_task(task)
 
 
 @app.delete('/tasks')
 def delete_task(description: Annotated[str, Body(embed=True)]):
-    try:
-        fake_db.pop(description)
-    except:
+    if not task_service.delete_task(description):
         raise HTTPException(status_code=404, detail="Item not found")
